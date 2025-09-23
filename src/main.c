@@ -58,7 +58,6 @@ void strbuf_reserve(StringBuf *sb, size_t size) {
 }
 
 
-
 void strbuf_appends(StringBuf *sb, String s) {
     strbuf_reserve(sb, s.len);
     memcpy(sb->items + sb->len, s.items, s.len);
@@ -214,6 +213,48 @@ void string_println(String s) {
 }
 
 
+void string_print_escaped(String s) {
+    putchar('"');
+    for (size_t i = 0; i < s.len; ++i) {
+        char c = s.items[i];
+        switch (c) {
+            case '\a':
+                printf("\\a");
+            break;
+            case '\n':
+                printf("\\n");
+            break;
+            case '\t':
+                printf("\\t");
+            break;
+            case '\v':
+                printf("\\v");
+            break;
+            case '\b':
+                printf("\\b");
+            break;
+            case '\r':
+                printf("\\r");
+            break;
+            case '\f':
+                printf("\\f");
+            break;
+            case '\"':
+                printf("\\\"");
+            break;
+            case '\'':  // not used since string uses " for borders
+                printf("'");
+            break;
+            case '\\':
+                printf("\\\\");
+            break;
+            default:
+                putchar(c);
+            break;
+        }
+    }
+    putchar('"');
+}
 
 
 
@@ -222,6 +263,7 @@ typedef struct {
     enum {
         TOK_IDENT,
         TOK_NUMLIT,
+        TOK_STRLIT,
         TOK_LPAREN,
         TOK_RPAREN,
         TOK_LBRACK,
@@ -287,6 +329,11 @@ void token_display(const Token *tok) {
             printf(", value=%g", tok->numval);
         break;
 
+        case TOK_STRLIT:
+            printf(", value=");
+            string_print_escaped(tok->value);
+        break;
+
         case TOK_LPAREN:
         case TOK_RPAREN:
         case TOK_LBRACK:
@@ -309,6 +356,7 @@ typedef enum {
     PARSEERR_OK,
     PARSEERR_TOK_UNKNOWN,
     PARSEERR_TOK_NUMBER,
+    PARSEERR_AST_UNFINISHED_STRLIT,
 
     PARSEERR_AST_EXPECTED_IDENT,
     PARSEERR_AST_EXPECTED_NUMLIT,
@@ -369,6 +417,21 @@ ParseError tokenize(String *source, Tokens *tokens) {
             case ',': {
                 *source = string_shl(*source, 1);
                 Token tok = { TOK_COMMA, .value = {0} };
+                tokens_push(tokens, tok);
+            } break;
+
+            case '"': {
+                *source = string_shl(*source, 1);
+                Token tok = { TOK_STRLIT, .value = {source->items, 0} };
+                while(source->len && *source->items != '"') {
+                    *source = string_shl(*source, 1);
+                    tok.value.len++;
+                }
+                if (!source->len) {
+                    err = PARSEERR_AST_UNFINISHED_STRLIT;
+                    goto return_err;
+                }
+                *source = string_shl(*source, 1);
                 tokens_push(tokens, tok);
             } break;
 
@@ -469,6 +532,7 @@ OpInfo OPINFO_TABLE[] = {
 typedef enum {
     ASTTYPE_NUMLIT,
     ASTTYPE_IDENT,
+    ASTTYPE_STRLIT,
     ASTTYPE_BINOP,
     ASTTYPE_CALL,
     ASTTYPE_ARRAY_LITERAL,
@@ -497,6 +561,11 @@ typedef struct {
     _ASTNODEBASE();
     StringBuf value;
 } ASTNode_Ident;
+
+typedef struct {
+    _ASTNODEBASE();
+    StringBuf value;
+} ASTNode_Strlit;
 
 typedef struct {
     _ASTNODEBASE();
@@ -557,7 +626,12 @@ void ast_free(ASTNode *node) {
     switch (node->_ast_type) {
             case ASTTYPE_NUMLIT: {
                 free(node);
+            } break;
 
+            case ASTTYPE_STRLIT: {
+                ASTNode_Strlit *strlit = (void *)node;
+                strbuf_free(&strlit->value);
+                free(node);
             } break;
 
             case ASTTYPE_IDENT: {
@@ -679,6 +753,14 @@ ParseError parse_expression(TokenIterator *titer, ASTNode **expr, float min_bp) 
             lhs = (void *)ident;
         } break;
 
+        case TOK_STRLIT: {
+            titer_get(titer);
+            ASTNode_Strlit *strlit = malloc(sizeof(*strlit));
+            *strlit = (ASTNode_Strlit){ ASTTYPE_STRLIT, LVALUE, (StringBuf){} };
+            strbuf_appends(&strlit->value, tok.value);
+            lhs = (void *)strlit;
+        } break;
+
         case TOK_NUMLIT: {
             titer_get(titer);
             ASTNode_Numlit *numlit = malloc(sizeof(*numlit));
@@ -712,6 +794,7 @@ ParseError parse_expression(TokenIterator *titer, ASTNode **expr, float min_bp) 
         switch (tok.type) {
             case TOK_IDENT:
             case TOK_NUMLIT:
+            case TOK_STRLIT:
             case TOK_LPAREN:
             case TOK_LBRACK:
                 err = PARSEERR_AST_EXPECTED_BINOP;
@@ -783,10 +866,17 @@ void _ast_print_impl(const ASTNode *ast) {
             ASTNode_Numlit *numlit = (void *)ast;
             printf("Numlit(valtype=%s, value=%g)", valtype, numlit->value);
         } break;
+
         case ASTTYPE_IDENT: {
             ASTNode_Ident *ident = (void *)ast;
             printf("Ident(valtype=%s, value=%.*s)", valtype, (int)ident->value.len, ident->value.items);
         } break;
+
+        case ASTTYPE_STRLIT: {
+            ASTNode_Strlit *strlit = (void *)ast;
+            printf("Strlit(valtype=%s, value=%.*s)", valtype, (int)strlit->value.len, strlit->value.items);
+        } break;
+
         case ASTTYPE_BINOP: {
             ASTNode_BinOp *binop = (void *)ast;
             OpInfo opinfo = OPINFO_TABLE[binop->op];
@@ -857,6 +947,9 @@ void print_parseerr(ParseError err, String line, const ASTNode *ast, const Token
             }
         } break;
 
+        case PARSEERR_AST_UNFINISHED_STRLIT: {
+            printf(RED "Error: Unfinished string literal" RESET);
+        } break;
 
         case PARSEERR_AST_EXPECTED_IDENT: {
             printf(RED "Error: Expected ident, got ");
@@ -944,12 +1037,13 @@ typedef struct Object Object;
 
 typedef enum {
     OBJTYPE_NUMBER,
+    OBJTYPE_STRING,
     OBJTYPE_ARRAY,
 } ObjectType;
 
-#define EMPTY_OBJBASE_INITIALIZER(objtype) { 0, nullptr, nullptr, (objtype) }
+#define EMPTY_OBJBASE_INITIALIZER(objtype) { 0, (objtype) }
 
-#define _OBJECTBASE() struct { size_t refcount; Object *prev, *next; ObjectType type; } __obj_base__
+#define _OBJECTBASE() struct { size_t refcount; ObjectType type; } __obj_base__
 
 struct Object {
     _OBJECTBASE();
@@ -959,6 +1053,11 @@ typedef struct {
     _OBJECTBASE();
     double value;
 } Object_Number;
+
+typedef struct {
+    _OBJECTBASE();
+    StringBuf value;
+} Object_String;
 
 typedef struct {
     _OBJECTBASE();
@@ -1045,12 +1144,17 @@ void code_append(Code *code, Instruction instr) {
 
 
 
-
 void object_print(Object *obj) {
     switch (obj->__obj_base__.type) {
         case OBJTYPE_NUMBER:
             printf("%g", ((Object_Number*)obj)->value);
         break;
+
+        case OBJTYPE_STRING: {
+            Object_String *strobj = (void *)obj;
+            string_print_escaped(strbuf_string(&strobj->value));
+        } break;
+
         case OBJTYPE_ARRAY:
             printf("[");
             Object_Array *arr = (void *)obj;
@@ -1177,12 +1281,34 @@ bool obj_is_number(Object *obj) {
     return obj && obj->__obj_base__.type == OBJTYPE_NUMBER;
 }
 
+
+bool isintegral(double x) {
+    double i;
+    return modf(x, &i) == 0.0;
+}
+
+bool obj_is_integer(Object *obj) {
+    return obj && obj->__obj_base__.type == OBJTYPE_NUMBER && isintegral(((Object_Number *)obj)->value);
+}
+
+bool obj_is_string(Object *obj) {
+    return obj && obj->__obj_base__.type == OBJTYPE_STRING;
+}
+
 cstr objtype_as_str(Object *obj) {
     static const cstr OBJTYPE2STR[] = {
         [OBJTYPE_NUMBER] = "number",
         [OBJTYPE_ARRAY] = "array",
     };
     return OBJTYPE2STR[obj->__obj_base__.type];
+}
+
+int64_t obj_as_integer(Object *obj) {
+    return ((Object_Number *)obj)->value;
+}
+
+uint64_t obj_as_uinteger(Object *obj) {
+    return ((Object_Number *)obj)->value;
 }
 
 void error_invalid_binop_args(OpKind op, Object *a, Object *b) {
@@ -1219,6 +1345,13 @@ void exec_decdrop(Executor *exec, Object *obj) {
                 Object_Number *num = (void *)obj;
                 free(num);
             } break;
+
+            case OBJTYPE_STRING: {
+                Object_String *str = (void *)obj;
+                strbuf_free(&str->value);
+                free(str);
+            } break;
+
             case OBJTYPE_ARRAY: {
                 Object_Array *arr = (void *)obj;
                 for (size_t i = 0; i < arr->len; ++i) {
@@ -1320,17 +1453,27 @@ ExecError exec_code(Executor *exec, const Code *code) {
                 Object *a = exec_stack_pop(exec);
                 Object *b = exec_stack_pop(exec);
 
-                if (!obj_is_number(a) || !obj_is_number(b)) {
+                if (obj_is_number(a) && obj_is_number(b)) {
+                    Object_Number *anum = (void *)a;
+                    Object_Number *bnum = (void *)b;
+                    Object_Number *result = exec_create_number(exec, anum->value + bnum->value);
+                    exec_decdrop(exec, a);
+                    exec_decdrop(exec, b);
+                    exec_stack_push(exec, (Object *)result);
+                } else if (obj_is_string(a) && obj_is_string(b)) {
+                    Object_String *astr = (void *)a;
+                    Object_String *bstr = (void *)b;
+                    Object_String *result = malloc(sizeof(*result));
+                    *result = (Object_String){ EMPTY_OBJBASE_INITIALIZER(OBJTYPE_STRING) };
+                    strbuf_appends(&result->value, strbuf_string(&astr->value));
+                    strbuf_appends(&result->value, strbuf_string(&bstr->value));
+                    exec_decdrop(exec, a);
+                    exec_decdrop(exec, b);
+                    exec_stack_push(exec, (Object *)result);
+                } else {
                     error_invalid_binop_args(BINOP_ADD, a, b);
                     return EXEC_ERR;
                 }
-
-                Object_Number *anum = (void *)a;
-                Object_Number *bnum = (void *)b;
-                Object_Number *result = exec_create_number(exec, anum->value + bnum->value);
-                exec_decdrop(exec, a);
-                exec_decdrop(exec, b);
-                exec_stack_push(exec, (Object *)result);
             } break;
 
             case VM_SUB: {
@@ -1354,17 +1497,39 @@ ExecError exec_code(Executor *exec, const Code *code) {
                 Object *a = exec_stack_pop(exec);
                 Object *b = exec_stack_pop(exec);
 
-                if (!obj_is_number(a) || !obj_is_number(b)) {
+                if (obj_is_number(a) && obj_is_number(b)) {
+                    Object_Number *anum = (void *)a;
+                    Object_Number *bnum = (void *)b;
+                    Object_Number *result = exec_create_number(exec, anum->value * bnum->value);
+                    exec_decdrop(exec, a);
+                    exec_decdrop(exec, b);
+                    exec_stack_push(exec, (Object *)result);
+                } else if (obj_is_integer(a) && obj_is_string(b) && obj_as_integer(a) >= 0) {
+                    size_t times = obj_as_integer(a);
+                    Object_String *result = malloc(sizeof(*result));
+                    *result = (Object_String){ EMPTY_OBJBASE_INITIALIZER(OBJTYPE_STRING) };
+                    Object_String *bstr = (void *)b;
+                    for (size_t i = 0; i < times; ++i) {
+                        strbuf_appends(&result->value, strbuf_string(&bstr->value));
+                    }
+                    exec_decdrop(exec, a);
+                    exec_decdrop(exec, b);
+                    exec_stack_push(exec, (Object *)result);
+                } else if (obj_is_integer(b) && obj_is_string(a) && obj_as_integer(b) >= 0) {
+                    size_t times = obj_as_integer(b);
+                    Object_String *result = malloc(sizeof(*result));
+                    *result = (Object_String){ EMPTY_OBJBASE_INITIALIZER(OBJTYPE_STRING) };
+                    Object_String *astr = (void *)a;
+                    for (size_t i = 0; i < times; ++i) {
+                        strbuf_appends(&result->value, strbuf_string(&astr->value));
+                    }
+                    exec_decdrop(exec, a);
+                    exec_decdrop(exec, b);
+                    exec_stack_push(exec, (Object *)result);
+                } else {
                     error_invalid_binop_args(BINOP_ADD, a, b);
                     return EXEC_ERR;
                 }
-
-                Object_Number *anum = (void *)a;
-                Object_Number *bnum = (void *)b;
-                Object_Number *result = exec_create_number(exec, anum->value * bnum->value);
-                exec_decdrop(exec, a);
-                exec_decdrop(exec, b);
-                exec_stack_push(exec, (Object *)result);
             } break;
 
             case VM_DIV: {
@@ -1478,6 +1643,15 @@ void exec_compile_ast(Executor *exec, const ASTNode *ast, Code *compile_result) 
             const ASTNode_Ident *astnode = (void *)ast;
             String varname = strbuf_string(&astnode->value);
             Instruction instr = { VM_LOAD, .varname = varname };
+            code_append(compile_result, instr);
+        } break;
+
+        case ASTTYPE_STRLIT: {
+            const ASTNode_Strlit *astnode = (void *)ast;
+            Object_String *str = malloc(sizeof(*str));
+            *str = (Object_String){ EMPTY_OBJBASE_INITIALIZER(OBJTYPE_STRING) };
+            strbuf_appends(&str->value, strbuf_string(&astnode->value));
+            Instruction instr = { VM_PUT, .arg = (Object *)str };
             code_append(compile_result, instr);
         } break;
 
