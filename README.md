@@ -1,3 +1,11 @@
-## Vinyl - Yet another programming language
+## **Vinyl** --- yet another programming language
 
-![foo](thumbnail.webp "Foo")
+![vinyl record (for those who doesn't know)](thumbnail.webp "Foo")
+
+## **About**
+Vinyl is a pet programming language, aimed to explore several concepts in computer science. It is inspired by Python, Lua, MATLAB.
+
+Current features of Vinyl:
+- dynamic typing
+- garbage collection
+- stack-based virtual machine
