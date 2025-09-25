@@ -9,253 +9,8 @@
 #include <ctype.h>
 
 
-#define RESET   "\e[0m"
-#define BLACK   "\e[30m"
-#define RED     "\e[31m"
-#define GREEN   "\e[32m"
-#define YELLOW  "\e[33m"
-#define BLUE    "\e[34m"
-#define MAGENTA "\e[35m"
-#define CYAN    "\e[36m"
-#define WHITE   "\e[37m"
-
-
-
-typedef const char *cstr;
-typedef struct {
-    char *items;
-    size_t len;
-    size_t cap;
-} StringBuf;
-
-typedef struct {
-    const char *items;
-    size_t len;
-} String;
-
-
-size_t next_pow2(size_t x) {
-  uint64_t p = 1;
-  while (p < x) p *= 2;
-  return p;
-}
-
-size_t round8(size_t x) {
-    const int round_to = 8;
-    return (x + (round_to - 1)) & ~(round_to - 1);
-}
-
-
-void strbuf_reserve(StringBuf *sb, size_t size) {
-    if (size <= sb->cap - sb->len) {
-        return;
-    }
-
-    size_t newcap = round8(sb->len + size);
-
-    sb->items = realloc(sb->items, newcap);
-    sb->cap = newcap;
-}
-
-
-void strbuf_appends(StringBuf *sb, String s) {
-    strbuf_reserve(sb, s.len);
-    memcpy(sb->items + sb->len, s.items, s.len);
-    sb->len += s.len;
-}
-
-void strbuf_free(StringBuf *sb) {
-    free(sb->items);
-}
-
-String strbuf_string(const StringBuf *sb) {
-    return (String){
-        .items = sb->items,
-        .len = sb->len,
-    };
-}
-
-#define auto_strbuf_t StringBuf _CLEANUP(strbuf_free)
-
-bool string_eq(String s, cstr cs) {
-    return strncmp(s.items, cs, s.len) == 0;
-}
-
-bool string_seq(String s1, String s2) {
-    return (s1.len == s2.len) && (strncmp(s1.items, s2.items, s1.len) == 0);
-}
-
-bool string_hasprefix(String, cstr);
-bool string_hassuffix(String, cstr);
-bool string_shasprefix(String, String);
-bool string_shassuffix(String, String);
-
-String string_remprefix(String, cstr);
-String string_remsuffix(String, cstr);
-String string_sremprefix(String, String);
-String string_sremsuffix(String, String);
-
-
-
-// Check if string has prefix (C string)
-bool string_hasprefix(String s, cstr prefix) {
-    size_t prefix_len = strlen(prefix);
-    if (s.len < prefix_len) {
-        return false;
-    }
-    return strncmp(s.items, prefix, prefix_len) == 0;
-}
-
-// Check if string has suffix (C string)
-bool string_hassuffix(String s, cstr suffix) {
-    size_t suffix_len = strlen(suffix);
-    if (s.len < suffix_len) {
-        return false;
-    }
-    return strncmp(s.items + s.len - suffix_len, suffix, suffix_len) == 0;
-}
-
-// Check if string has prefix (String)
-bool string_shasprefix(String s, String prefix) {
-    if (s.len < prefix.len) {
-        return false;
-    }
-    return strncmp(s.items, prefix.items, prefix.len) == 0;
-}
-
-// Check if string has suffix (String)
-bool string_shassuffix(String s, String suffix) {
-    if (s.len < suffix.len) {
-        return false;
-    }
-    return strncmp(s.items + s.len - suffix.len, suffix.items, suffix.len) == 0;
-}
-
-// Remove prefix (C string) - returns new string view
-String string_remprefix(String s, cstr prefix) {
-    size_t prefix_len = strlen(prefix);
-    if (s.len >= prefix_len && strncmp(s.items, prefix, prefix_len) == 0) {
-        return (String){s.items + prefix_len, s.len - prefix_len};
-    }
-    return s; // Return original if prefix not found
-}
-
-// Remove suffix (C string) - returns new string view
-String string_remsuffix(String s, cstr suffix) {
-    size_t suffix_len = strlen(suffix);
-    if (s.len >= suffix_len &&
-        strncmp(s.items + s.len - suffix_len, suffix, suffix_len) == 0) {
-        return (String){s.items, s.len - suffix_len};
-    }
-    return s; // Return original if suffix not found
-}
-
-// Remove prefix (String) - returns new string view
-String string_sremprefix(String s, String prefix) {
-    if (s.len >= prefix.len && strncmp(s.items, prefix.items, prefix.len) == 0) {
-        return (String){s.items + prefix.len, s.len - prefix.len};
-    }
-    return s; // Return original if prefix not found
-}
-
-// Remove suffix (String) - returns new string view
-String string_sremsuffix(String s, String suffix) {
-    if (s.len >= suffix.len &&
-        strncmp(s.items + s.len - suffix.len, suffix.items, suffix.len) == 0) {
-        return (String){s.items, s.len - suffix.len};
-    }
-    return s; // Return original if suffix not found
-}
-
-String string_shl(String s, size_t sh) {
-    sh = sh > s.len ? s.len : sh;
-    s.items += sh;
-    s.len -= sh;
-    return s;
-}
-
-String string_shr(String s, size_t sh) {
-    sh = sh > s.len ? s.len : sh;
-    s.len -= sh;
-    return s;
-}
-
-
-String string_ltrim(String s) {
-    while (s.len && strchr(" \t\n\v\f\r", *s.items)) {
-        s = string_shl(s, 1);
-    }
-    return s;
-}
-
-String string_rtrim(String s) {
-    while (s.len && strchr(" \t\n\v\f\r", s.items[s.len-1])) {
-        s = string_shr(s, 1);
-    }
-    return s;
-}
-
-String string_trim(String s) {
-    return string_ltrim(string_rtrim(s));
-}
-
-void string_display(String s, FILE *fp) {
-    fprintf(fp, "%.*s", (int)s.len, s.items);
-}
-
-void string_print(String s) {
-    string_display(s, stdout);
-}
-
-void string_println(String s) {
-    string_display(s, stdout);
-    printf("\n");
-}
-
-
-void string_print_escaped(String s) {
-    putchar('"');
-    for (size_t i = 0; i < s.len; ++i) {
-        char c = s.items[i];
-        switch (c) {
-            case '\a':
-                printf("\\a");
-            break;
-            case '\n':
-                printf("\\n");
-            break;
-            case '\t':
-                printf("\\t");
-            break;
-            case '\v':
-                printf("\\v");
-            break;
-            case '\b':
-                printf("\\b");
-            break;
-            case '\r':
-                printf("\\r");
-            break;
-            case '\f':
-                printf("\\f");
-            break;
-            case '\"':
-                printf("\\\"");
-            break;
-            case '\'':  // not used since string uses " for borders
-                printf("'");
-            break;
-            case '\\':
-                printf("\\\\");
-            break;
-            default:
-                putchar(c);
-            break;
-        }
-    }
-    putchar('"');
-}
-
+#include "common.h"
+#include "string.h"
 
 
 
@@ -273,14 +28,15 @@ typedef struct {
         TOK_EOF,
     } type;
     union {
-        String value;
+        Vnl_String value;
         double numval;
     };
 } Token;
 
-static const cstr TOKTYPE_NAMES[] = {
+static const Vnl_CString TOKTYPE_NAMES[] = {
     [TOK_IDENT]  = "Ident",
     [TOK_NUMLIT] = "Numlit",
+    [TOK_STRLIT] = "Strlit",
     [TOK_LPAREN] = "LParen",
     [TOK_RPAREN] = "RParen",
     [TOK_LBRACK] = "LBrack",
@@ -384,66 +140,70 @@ typedef enum {
 } ParseError;
 
 
-ParseError tokenize(String *source, Tokens *tokens) {
+ParseError tokenize(Vnl_String *source, Tokens *tokens) {
     ParseError err = PARSEERR_OK;
     *source = string_ltrim(*source);
 
     while (source->len) {
-        switch (source->items[0]) {
+        switch (source->chars[0]) {
             case '(': {
-                *source = string_shl(*source, 1);
+                *source = string_lshift(*source);
                 Token tok = { TOK_LPAREN, .value = {0} };
                 tokens_push(tokens, tok);
             } break;
 
             case ')': {
-                *source = string_shl(*source, 1);
+                *source = string_lshift(*source);
                 Token tok = { TOK_RPAREN, .value = {0} };
                 tokens_push(tokens, tok);
             } break;
 
             case '[': {
-                *source = string_shl(*source, 1);
+                *source = string_lshift(*source);
                 Token tok = { TOK_LBRACK, .value = {0} };
                 tokens_push(tokens, tok);
             } break;
 
             case ']': {
-                *source = string_shl(*source, 1);
+                *source = string_lshift(*source);
                 Token tok = { TOK_RBRACK, .value = {0} };
                 tokens_push(tokens, tok);
             } break;
 
             case ',': {
-                *source = string_shl(*source, 1);
+                *source = string_lshift(*source);
                 Token tok = { TOK_COMMA, .value = {0} };
                 tokens_push(tokens, tok);
             } break;
 
             case '"': {
-                *source = string_shl(*source, 1);
-                Token tok = { TOK_STRLIT, .value = {source->items, 0} };
-                while(source->len && *source->items != '"') {
-                    *source = string_shl(*source, 1);
+                *source = string_lshift(*source);
+                Token tok = { .type = TOK_STRLIT, .value = {source->chars, 0} };
+                printf("1) ");
+                token_display(&tok);
+                puts("");
+                while(source->len && *source->chars != '"') {
+                    *source = string_lshift(*source);
                     tok.value.len++;
                 }
                 if (!source->len) {
                     err = PARSEERR_AST_UNFINISHED_STRLIT;
                     goto return_err;
                 }
-                *source = string_shl(*source, 1);
+                *source = string_lshift(*source);
+                token_display(&tok);
                 tokens_push(tokens, tok);
             } break;
 
             case '0' ... '9': {
                 char *start, *end;
-                start = end = (char *)source->items;
+                start = end = (char *)source->chars;
                 double numval = strtod(start, &end);
                 if (start == end) {
                     err = PARSEERR_TOK_NUMBER;
                     goto return_err;
                 }
-                *source = string_shl(*source, end - start);
+                *source = string_lshiftn(*source, end - start);
                 Token tok = { TOK_NUMLIT, .numval = numval };
                 tokens_push(tokens, tok);
             } break;
@@ -453,9 +213,9 @@ ParseError tokenize(String *source, Tokens *tokens) {
             case '_': {
                 Token tok = { TOK_IDENT, .value = *source };
                 tok.value.len = 0;
-                while (source->len && (isalnum(*source->items) || *source->items == '_')) {
+                while (source->len && (isalnum(*source->chars) || *source->chars == '_')) {
                     tok.value.len ++;
-                    *source = string_shl(*source, 1);
+                    *source = string_lshift(*source);
                 }
                 tokens_push(tokens, tok);
             } break;
@@ -463,8 +223,8 @@ ParseError tokenize(String *source, Tokens *tokens) {
             case '+': case '-':
             case '*': case '/':
             case '%': case '=': {
-                Token tok = { TOK_OP, .value = { source->items, 1 } };
-                *source = string_shl(*source, 1);
+                Token tok = { TOK_OP, .value = { source->chars, 1 } };
+                *source = string_lshift(*source);
                 tokens_push(tokens, tok);
             } break;
 
@@ -496,8 +256,8 @@ void console_clear() {
 }
 
 
-void console_read(StringBuf *buffer) {
-    buffer->len = getline(&buffer->items, &buffer->cap, stdin);
+void console_read(Vnl_StringBuffer *buffer) {
+    buffer->len = getline(&buffer->chars, &buffer->cap, stdin);
 }
 
 
@@ -513,7 +273,7 @@ typedef enum {
 
 typedef struct {
     OpKind kind;
-    cstr str;
+    Vnl_CString str;
     float left_bp;
     float right_bp;
 } OpInfo;
@@ -559,12 +319,12 @@ typedef struct {
 
 typedef struct {
     _ASTNODEBASE();
-    StringBuf value;
+    Vnl_StringBuffer value;
 } ASTNode_Ident;
 
 typedef struct {
     _ASTNODEBASE();
-    StringBuf value;
+    Vnl_StringBuffer value;
 } ASTNode_Strlit;
 
 typedef struct {
@@ -667,15 +427,15 @@ void ast_free(ASTNode *node) {
 }
 
 
-OpInfo get_op_info(String strop) {
+OpInfo get_op_info(Vnl_String strop) {
     const size_t numops = sizeof(OPINFO_TABLE)/sizeof(OPINFO_TABLE[0]);
     for (size_t i = 0; i < numops; ++i) {
         OpInfo opinfo = OPINFO_TABLE[i];
-        if (string_eq(strop, opinfo.str)) {
+        if (string_cmpeq_c(strop, opinfo.str)) {
             return opinfo;
         }
     }
-    printf(RED "Invalid strop: %.*s\n" RESET, (int)strop.len, strop.items);
+    printf(VNL_ANSICOL_RED "Invalid strop: %.*s\n" VNL_ANSICOL_RESET, (int)strop.len, strop.chars);
     abort();
 }
 
@@ -748,16 +508,16 @@ ParseError parse_expression(TokenIterator *titer, ASTNode **expr, float min_bp) 
         case TOK_IDENT: {
             titer_get(titer);
             ASTNode_Ident *ident = malloc(sizeof(*ident));
-            *ident = (ASTNode_Ident) { ASTTYPE_IDENT, LVALUE, (StringBuf){} };
-            strbuf_appends(&ident->value, tok.value);
+            *ident = (ASTNode_Ident) { ASTTYPE_IDENT, LVALUE, (Vnl_StringBuffer){} };
+            strbuf_append_s(&ident->value, tok.value);
             lhs = (void *)ident;
         } break;
 
         case TOK_STRLIT: {
             titer_get(titer);
             ASTNode_Strlit *strlit = malloc(sizeof(*strlit));
-            *strlit = (ASTNode_Strlit){ ASTTYPE_STRLIT, LVALUE, (StringBuf){} };
-            strbuf_appends(&strlit->value, tok.value);
+            *strlit = (ASTNode_Strlit){ ASTTYPE_STRLIT, LVALUE, (Vnl_StringBuffer){} };
+            strbuf_append_s(&strlit->value, tok.value);
             lhs = (void *)strlit;
         } break;
 
@@ -859,7 +619,7 @@ void _ast_print_impl(const ASTNode *ast) {
         return;
     }
 
-    cstr valtype = ast->_ast_valtype == LVALUE ? "LValue" : "RValue";
+    Vnl_CString valtype = ast->_ast_valtype == LVALUE ? "LValue" : "RValue";
 
     switch (ast->_ast_type) {
         case ASTTYPE_NUMLIT: {
@@ -869,12 +629,12 @@ void _ast_print_impl(const ASTNode *ast) {
 
         case ASTTYPE_IDENT: {
             ASTNode_Ident *ident = (void *)ast;
-            printf("Ident(valtype=%s, value=%.*s)", valtype, (int)ident->value.len, ident->value.items);
+            printf("Ident(valtype=%s, value=%.*s)", valtype, (int)ident->value.len, ident->value.chars);
         } break;
 
         case ASTTYPE_STRLIT: {
             ASTNode_Strlit *strlit = (void *)ast;
-            printf("Strlit(valtype=%s, value=%.*s)", valtype, (int)strlit->value.len, strlit->value.items);
+            printf("Strlit(valtype=%s, value=%.*s)", valtype, (int)strlit->value.len, strlit->value.chars);
         } break;
 
         case ASTTYPE_BINOP: {
@@ -927,102 +687,102 @@ void ast_println(const ASTNode *ast) {
 }
 
 
-void print_parseerr(ParseError err, String line, const ASTNode *ast, const TokenIterator *titer) {
+void print_parseerr(ParseError err, Vnl_String line, const ASTNode *ast, const TokenIterator *titer) {
     switch (err) {
         case PARSEERR_OK: {
-            printf(GREEN "Error: Success!\n" RESET);
+            printf(VNL_ANSICOL_GREEN "Error: Success!\n" VNL_ANSICOL_RESET);
         } break;
 
         case PARSEERR_TOK_UNKNOWN: {
-            printf(RED "Error: Unknown character '%c' (%d)\n" RESET, *line.items, *line.items);
+            printf(VNL_ANSICOL_RED "Error: Unknown character '%c' (%d)\n" VNL_ANSICOL_RESET, *line.chars, *line.chars);
         } break;
 
         case PARSEERR_TOK_NUMBER: {
-            printf(RED "Error: Cannot parse number from position: \"\n");
+            printf(VNL_ANSICOL_RED "Error: Cannot parse number from position: \"\n");
             if (line.len <= 10) {
                 string_print(line);
-                printf("\"\n"RESET);
+                printf("\"\n"VNL_ANSICOL_RESET);
             } else {
-                printf("%.*s" CYAN "..." RED "\"\n" RESET, 5, line.items);
+                printf("%.*s" VNL_ANSICOL_CYAN "..." VNL_ANSICOL_RED "\"\n" VNL_ANSICOL_RESET, 5, line.chars);
             }
         } break;
 
         case PARSEERR_AST_UNFINISHED_STRLIT: {
-            printf(RED "Error: Unfinished string literal" RESET);
+            printf(VNL_ANSICOL_RED "Error: Unfinished string literal" VNL_ANSICOL_RESET);
         } break;
 
         case PARSEERR_AST_EXPECTED_IDENT: {
-            printf(RED "Error: Expected ident, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected ident, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_NUMLIT: {
-            printf(RED "Error: Expected numlit, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected numlit, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_LPAREN: {
-            printf(RED "Error: Expected lparen, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected lparen, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_RPAREN: {
-            printf(RED "Error: Expected rparen, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected rparen, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_LBRACK: {
-            printf(RED "Error: Expected lbrack, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected lbrack, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_RBRACK: {
-            printf(RED "Error: Expected rbrack, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected rbrack, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_COMMA: {
-            printf(RED "Error: Expected comma, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected comma, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_BINOP: {
-            printf(RED "Error: Expected binop, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected binop, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_EOF: {
-            printf(RED "Error: Expected eof, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected eof, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_LVALUE: {
-            printf(RED "Error: Expected lvalue, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected lvalue, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
         } break;
 
         case PARSEERR_AST_EXPECTED_RVALUE: {
-            printf(RED "Error: Expected rvalue, got ");
+            printf(VNL_ANSICOL_RED "Error: Expected rvalue, got ");
             Token tok = titer_peek(titer);
             token_display(&tok);
             printf("\n");
@@ -1056,7 +816,7 @@ typedef struct {
 
 typedef struct {
     _OBJECTBASE();
-    StringBuf value;
+    Vnl_StringBuffer value;
 } Object_String;
 
 typedef struct {
@@ -1067,12 +827,7 @@ typedef struct {
 } Object_Array;
 
 typedef struct {
-    Object *begin, *end;
-    size_t len;
-} GCList;
-
-typedef struct {
-    cstr name;
+    Vnl_CString name;
     Object *value;
 } Variable;
 
@@ -1118,7 +873,7 @@ typedef struct {
     VMOpcode opcode;
     union {
         Object *arg;
-        String varname;
+        Vnl_String varname;
         size_t makearr_len;
     };
 } Instruction;
@@ -1295,8 +1050,8 @@ bool obj_is_string(Object *obj) {
     return obj && obj->__obj_base__.type == OBJTYPE_STRING;
 }
 
-cstr objtype_as_str(Object *obj) {
-    static const cstr OBJTYPE2STR[] = {
+Vnl_CString objtype_as_str(Object *obj) {
+    static const Vnl_CString OBJTYPE2STR[] = {
         [OBJTYPE_NUMBER] = "number",
         [OBJTYPE_ARRAY] = "array",
     };
@@ -1313,14 +1068,14 @@ uint64_t obj_as_uinteger(Object *obj) {
 
 void error_invalid_binop_args(OpKind op, Object *a, Object *b) {
     if (!a && !b) {
-        printf(RED "Error: not enough arguments, stack exceeded!\n" RESET);
+        printf(VNL_ANSICOL_RED "Error: not enough arguments, stack exceeded!\n" VNL_ANSICOL_RESET);
         exit(1);
     } else {
         OpInfo opinfo = OPINFO_TABLE[op];
         printf(
-            RED "Error: "
+            VNL_ANSICOL_RED "Error: "
             "Unsupported arguments for operator '%s':"
-            " <%s> and <%s>\n" RESET,
+            " <%s> and <%s>\n" VNL_ANSICOL_RESET,
             opinfo.str,
             objtype_as_str(a),
             objtype_as_str(b)
@@ -1367,10 +1122,10 @@ void exec_decdrop(Executor *exec, Object *obj) {
 
 
 
-Object *exec_get_var(Executor *exec, String name) {
+Object *exec_get_var(Executor *exec, Vnl_String name) {
     for (size_t i = 0; i < exec->varlist.len; ++i) {
         Variable *var = &exec->varlist.items[i];
-        if (string_eq(name, var->name)) {
+        if (string_cmpeq_c(name, var->name)) {
             return var->value;
         }
     }
@@ -1378,10 +1133,10 @@ Object *exec_get_var(Executor *exec, String name) {
 }
 
 
-void exec_set_var(Executor *exec, String name, Object *obj) {
+void exec_set_var(Executor *exec, Vnl_String name, Object *obj) {
     for (size_t i = 0; i < exec->varlist.len; ++i) {
         Variable *var = &exec->varlist.items[i];
-        if (string_eq(name, var->name)) {
+        if (string_cmpeq_c(name, var->name)) {
             exec_decdrop(exec, var->value);
             var->value = obj;
             return;
@@ -1395,7 +1150,7 @@ void exec_set_var(Executor *exec, String name, Object *obj) {
         exec->varlist.cap = newcap;
     }
     exec->varlist.items[exec->varlist.len++] = (Variable){
-        .name = strndup(name.items, name.len),
+        .name = strndup(name.chars, name.len),
         .value = obj
     };
     incref(obj);
@@ -1445,7 +1200,7 @@ ExecError exec_code(Executor *exec, const Code *code) {
         Instruction instr = code->items[pc];
         switch (instr.opcode) {
             case VM_SET: {
-                printf(RED "TODO: Illegal instruction\n" RESET);
+                printf(VNL_ANSICOL_RED "TODO: Illegal instruction\n" VNL_ANSICOL_RESET);
                 exit(1);
             } break;
 
@@ -1465,8 +1220,8 @@ ExecError exec_code(Executor *exec, const Code *code) {
                     Object_String *bstr = (void *)b;
                     Object_String *result = malloc(sizeof(*result));
                     *result = (Object_String){ EMPTY_OBJBASE_INITIALIZER(OBJTYPE_STRING) };
-                    strbuf_appends(&result->value, strbuf_string(&astr->value));
-                    strbuf_appends(&result->value, strbuf_string(&bstr->value));
+                    strbuf_append_s(&result->value, strbuf_string(&astr->value));
+                    strbuf_append_s(&result->value, strbuf_string(&bstr->value));
                     exec_decdrop(exec, a);
                     exec_decdrop(exec, b);
                     exec_stack_push(exec, (Object *)result);
@@ -1510,7 +1265,7 @@ ExecError exec_code(Executor *exec, const Code *code) {
                     *result = (Object_String){ EMPTY_OBJBASE_INITIALIZER(OBJTYPE_STRING) };
                     Object_String *bstr = (void *)b;
                     for (size_t i = 0; i < times; ++i) {
-                        strbuf_appends(&result->value, strbuf_string(&bstr->value));
+                        strbuf_append_s(&result->value, strbuf_string(&bstr->value));
                     }
                     exec_decdrop(exec, a);
                     exec_decdrop(exec, b);
@@ -1521,7 +1276,7 @@ ExecError exec_code(Executor *exec, const Code *code) {
                     *result = (Object_String){ EMPTY_OBJBASE_INITIALIZER(OBJTYPE_STRING) };
                     Object_String *astr = (void *)a;
                     for (size_t i = 0; i < times; ++i) {
-                        strbuf_appends(&result->value, strbuf_string(&astr->value));
+                        strbuf_append_s(&result->value, strbuf_string(&astr->value));
                     }
                     exec_decdrop(exec, a);
                     exec_decdrop(exec, b);
@@ -1568,22 +1323,22 @@ ExecError exec_code(Executor *exec, const Code *code) {
             } break;
 
             case VM_LOAD: {
-                String varname = instr.varname;
+                Vnl_String varname = instr.varname;
                 Object *obj = exec_get_var(exec, varname);
                 if (!obj) {
-                    printf(RED "Error: Unknown variable: ");
+                    printf(VNL_ANSICOL_RED "Error: Unknown variable: ");
                     string_println(varname);
-                    printf(RESET);
+                    printf(VNL_ANSICOL_RESET);
                     return EXEC_ERR;
                 }
                 exec_stack_push(exec, obj);
             } break;
 
             case VM_STORE: {
-                String varname = instr.varname;
+                Vnl_String varname = instr.varname;
                 Object *obj = exec_stack_pop(exec);
                 if (!obj) {
-                    printf(RED "Error: No value to store - stack is empty!\n" RESET);
+                    printf(VNL_ANSICOL_RED "Error: No value to store - stack is empty!\n" VNL_ANSICOL_RESET);
                     return EXEC_ERR;
                 }
                 exec_set_var(exec, varname, obj);
@@ -1591,7 +1346,7 @@ ExecError exec_code(Executor *exec, const Code *code) {
 
             case VM_ROT: {
                if (exec->stack_len < 2) {
-                   printf(RED "Error: not enough values to ROT!");
+                   printf(VNL_ANSICOL_RED "Error: not enough values to ROT!");
                    return EXEC_ERR;
                }
                Object *tmp = exec->stack[exec->stack_len - 1];
@@ -1601,7 +1356,7 @@ ExecError exec_code(Executor *exec, const Code *code) {
 
             case VM_DUP: {
                 if (!exec->stack_len) {
-                    printf(RED "Error: Cannot DUP - stack is empty!\n" RESET);
+                    printf(VNL_ANSICOL_RED "Error: Cannot DUP - stack is empty!\n" VNL_ANSICOL_RESET);
                     return EXEC_ERR;
                 } else {
                     exec_stack_push(exec, exec->stack[exec->stack_len-1]);
@@ -1641,7 +1396,7 @@ void exec_compile_ast(Executor *exec, const ASTNode *ast, Code *compile_result) 
 
         case ASTTYPE_IDENT: {
             const ASTNode_Ident *astnode = (void *)ast;
-            String varname = strbuf_string(&astnode->value);
+            Vnl_String varname = strbuf_string(&astnode->value);
             Instruction instr = { VM_LOAD, .varname = varname };
             code_append(compile_result, instr);
         } break;
@@ -1650,7 +1405,7 @@ void exec_compile_ast(Executor *exec, const ASTNode *ast, Code *compile_result) 
             const ASTNode_Strlit *astnode = (void *)ast;
             Object_String *str = malloc(sizeof(*str));
             *str = (Object_String){ EMPTY_OBJBASE_INITIALIZER(OBJTYPE_STRING) };
-            strbuf_appends(&str->value, strbuf_string(&astnode->value));
+            strbuf_append_s(&str->value, strbuf_string(&astnode->value));
             Instruction instr = { VM_PUT, .arg = (Object *)str };
             code_append(compile_result, instr);
         } break;
@@ -1660,11 +1415,11 @@ void exec_compile_ast(Executor *exec, const ASTNode *ast, Code *compile_result) 
             Instruction instr;
             if (astnode->op == BINOP_SET) {
                 if (astnode->lhs->_ast_type != ASTTYPE_IDENT) {
-                    printf(RED "Error: Not assignable!" RESET);
+                    printf(VNL_ANSICOL_RED "Error: Not assignable!" VNL_ANSICOL_RESET);
                     exit(1);
                 }
                 const ASTNode_Ident *ident = (void *)astnode->lhs;
-                String varname = strbuf_string(&ident->value);
+                Vnl_String varname = strbuf_string(&ident->value);
                 exec_compile_ast(exec, astnode->rhs, compile_result);
                 instr = (Instruction){ VM_DUP };
                 code_append(compile_result, instr);
@@ -1680,7 +1435,7 @@ void exec_compile_ast(Executor *exec, const ASTNode *ast, Code *compile_result) 
         } break;
 
         case ASTTYPE_CALL: {
-            printf(RED "TODO" RESET);
+            printf(VNL_ANSICOL_RED "TODO" VNL_ANSICOL_RESET);
             exit(1);
         } break;
 
@@ -1732,8 +1487,8 @@ void exec_stack_free(Executor *exec) {
 }
 
 
-String cstr2str(cstr s) {
-    return (String){ s, strlen(s) };
+Vnl_String cstr2str(Vnl_CString s) {
+    return (Vnl_String){ s, strlen(s) };
 }
 
 double obj_to_number(Object *obj) {
@@ -1753,7 +1508,7 @@ double obj_to_number_or(Object *obj, double d) {
 }
 
 
-Object *exec_getvar_cstr(Executor *exec, cstr varname) {
+Object *exec_getvar_cstr(Executor *exec, Vnl_CString varname) {
     return exec_get_var(exec, cstr2str(varname));
 }
 
@@ -1761,10 +1516,10 @@ Object *exec_getvar_cstr(Executor *exec, cstr varname) {
 
 
 
-void exec_string(Executor *exec, String source) {
+void exec_string(Executor *exec, Vnl_String source) {
     Tokens tokens = {};
 
-    bool debug = obj_to_number_or(exec_getvar_cstr(exec, "__debug__"), 0);
+    bool debug = obj_to_number_or(exec_getvar_cstr(exec, "__debug__"), 1);
     bool debug_print_tokens = obj_to_number_or(exec_getvar_cstr(exec, "__debug_tokens__"), (double)debug);
     bool debug_print_ast = obj_to_number_or(exec_getvar_cstr(exec, "__debug_ast__"), (double)debug);
     bool debug_print_code = obj_to_number_or(exec_getvar_cstr(exec, "__debug_code__"), (double)debug);
@@ -1806,7 +1561,7 @@ void exec_string(Executor *exec, String source) {
         if (debug_print_code) code_print(&code);
 
         if (exec_code(exec, &code)) {
-            printf(RED"<Error>\n"RESET);
+            printf(VNL_ANSICOL_RED"<Error>\n"VNL_ANSICOL_RESET);
         }
 
         if (debug_print_stack) exec_stack_print(exec);
@@ -1826,25 +1581,25 @@ void exec_string(Executor *exec, String source) {
 }
 
 int main() {
-    StringBuf linebuf = {};
+    Vnl_StringBuffer linebuf = {};
     Executor exec = {0};
 
     while (true) {
         printf("\e[34m>>\e[0m ");
         console_read(&linebuf);
-        String line = strbuf_string(&linebuf);
-        line = string_remsuffix(line, "\n");
+        Vnl_String line = strbuf_string(&linebuf);
+        line = string_remsuffix_c(line, "\n");
 
-        if (string_eq(line, "")) {
+        if (string_cmpeq_c(line, "")) {
             continue;
         }
 
-        if (string_eq(line, "exit")) {
+        if (string_cmpeq_c(line, "exit")) {
             printf("\e[31mExiting...\e[0m\n");
             break;
         }
 
-        if (string_eq(line, "clear")) {
+        if (string_cmpeq_c(line, "clear")) {
             printf("\e[1;1H\e[2J");
             continue;
         }
