@@ -17,7 +17,7 @@ static size_t round8(size_t x) {
 
 /***************************************************************************************/
 
-void strbuf_reserve(Vnl_StringBuffer *self, size_t size) {
+void vnl_strbuf_reserve(Vnl_StringBuffer *self, size_t size) {
 	if (self->len + size <= self->cap) {
 		return;
 	}
@@ -60,7 +60,7 @@ Vnl_String vnl_string_from_b(const Vnl_StringBuffer *sb) {
 	return (Vnl_String){ sb->chars, sb->len };
 }
 
-Vnl_String vnl_string_form_f(const Vnl_FixedString *fstr) {
+Vnl_String vnl_string_from_f(const Vnl_FixedString *fstr) {
 	return (Vnl_String){ fstr->chars, fstr->len };
 }
 
@@ -264,6 +264,9 @@ void vnl_string_fprintln_escaped(Vnl_String self, FILE *fp) {
 /***************************************************************************************/
 
 Vnl_FixedString vnl_fixstr_from_s(Vnl_String str) {
+	if (str.len == 0) {
+		return (Vnl_FixedString){ nullptr, 0 };
+	}
 	char *p = vnl_malloc(str.len);
 	memcpy(p, str.chars, str.len);
 	return (Vnl_FixedString){

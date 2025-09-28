@@ -13,6 +13,7 @@ void *vnl_malloc(size_t size) {
 		printf(VNL_ANSICOL_RED "Fatal error: unable to malloc!" VNL_ANSICOL_RESET);
 		abort();
 	}
+	memset(ptr, 0, size);
 	return ptr;
 }
 

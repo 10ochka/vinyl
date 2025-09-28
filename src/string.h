@@ -3,13 +3,12 @@
 #define __VINYL_STRING_H__
 
 #include "common.h"
-#include <stddef.h>
 
 
 typedef const char *Vnl_CString;
 typedef struct Vnl_String Vnl_String;
 typedef struct Vnl_StringBuffer Vnl_StringBuffer;
-typedef const struct Vnl_FixedString Vnl_FixedString;
+typedef struct Vnl_FixedString Vnl_FixedString;
 
 struct Vnl_String {
 	const char *chars;
@@ -21,7 +20,6 @@ struct Vnl_StringBuffer {
 	size_t len;
 	size_t cap;
 };
-
 
 struct Vnl_FixedString {
 	const char * const chars;
@@ -63,7 +61,6 @@ Vnl_String vnl_string_rshiftn(Vnl_String, size_t);
 Vnl_String vnl_string_ltrim(Vnl_String);
 Vnl_String vnl_string_rtrim(Vnl_String);
 Vnl_String vnl_string_trim(Vnl_String);
-
 
 void vnl_string_print(Vnl_String);
 void vnl_string_println(Vnl_String);

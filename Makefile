@@ -1,16 +1,12 @@
 
 CC		= clang
-CFLAGS	= -std=c23 -Wall -Wextra
+CFLAGS	= -std=c23 -Wall
+CLIBS   = -lreadline -lncurses -lxxhash
 
 SRCDIR = src
-BUILDDIR = build
 
-REPL_BINARY = $(BUILDDIR)/vinyl-repl
-
-
-$(REPL_BINARY): $(SRCDIR)/main.c $(SRCDIR)/string.c $(SRCDIR)/common.c
-	$(CC) $(CFLAGS) $? -o $@
+REPL_BINARY = vinyl-repl
 
 
-clean:
-	rm $(BUILDDIR)/*
+$(REPL_BINARY): src/*.c
+	$(CC) $(CFLAGS) $(CLIBS) $^ -o $@
